@@ -15,7 +15,7 @@ Built with:
 <br>
 
 ## Requirements 🛠️
-- `Python 3.x`
+- `python 3.x`
 - `requests` – For making HTTP requests.
 - `beautifulsoup4` – For parsing and navigating HTML.
 - `lxml` – An XML/HTML parser for BeautifulSoup.
