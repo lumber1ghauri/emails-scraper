@@ -62,8 +62,6 @@ info@example.com
 support@example.com
 ```
 
-This README provides a comprehensive guide for setting up the environment, installing dependencies, and running the project locally. Adjust paths and repository links as needed to match your specific setup.
-
 ## Badges
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
