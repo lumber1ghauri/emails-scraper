@@ -6,7 +6,7 @@ import requests
 import requests.exceptions as request_exception
 import json
 import asyncio
-import aiohttp
+import httpx
 from flask import Flask, request, jsonify
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -116,7 +116,8 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
             print(f'[+] Found {len(page_emails)} email(s) on {url}')
             return collected_emails
 
-        soup = BeautifulSoup(response.text, 'lxml')
+        # Use html5lib parser instead of lxml
+        soup = BeautifulSoup(response.text, 'html5lib')
 
         for anchor in soup.find_all('a'):
             link = anchor.get('href', '')
@@ -127,11 +128,11 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
     return collected_emails
 
 
-async def scrape_website_async(session: aiohttp.ClientSession, start_url: str, max_count: int = 100) -> set[str]:
+async def scrape_website_async(client: httpx.AsyncClient, start_url: str, max_count: int = 100) -> set[str]:
     """
-    Asynchronous version of website scraping.
+    Asynchronous version of website scraping using httpx.
 
-    :param session: aiohttp session for making requests
+    :param client: httpx client for making requests
     :param start_url: The initial URL to start scraping.
     :param max_count: The maximum number of pages to scrape. Defaults to 100.
     :return: A set of email addresses found during the scraping process.
@@ -158,28 +159,29 @@ async def scrape_website_async(session: aiohttp.ClientSession, start_url: str, m
         print(f'[{count}] Processing {url}')
 
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    html_content = await response.text()
-                    
-                    # Extract emails from current page
-                    page_emails = extract_emails(html_content)
-                    collected_emails.update(page_emails)
-                    
-                    # If we found any emails on this page, stop and return
-                    if page_emails:
-                        print(f'[+] Found {len(page_emails)} email(s) on {url}')
-                        return collected_emails
+            response = await client.get(url, timeout=10.0)
+            if response.status_code == 200:
+                html_content = response.text
+                
+                # Extract emails from current page
+                page_emails = extract_emails(html_content)
+                collected_emails.update(page_emails)
+                
+                # If we found any emails on this page, stop and return
+                if page_emails:
+                    print(f'[+] Found {len(page_emails)} email(s) on {url}')
+                    return collected_emails
 
-                    soup = BeautifulSoup(html_content, 'lxml')
+                # Use html5lib parser instead of lxml
+                soup = BeautifulSoup(html_content, 'html5lib')
 
-                    for anchor in soup.find_all('a'):
-                        link = anchor.get('href', '')
-                        normalized_link = normalize_link(link, base_url, page_path)
-                        if normalized_link not in urls_to_process and normalized_link not in scraped_urls:
-                            urls_to_process.append(normalized_link)
-                else:
-                    print(f'HTTP {response.status} for {url}')
+                for anchor in soup.find_all('a'):
+                    link = anchor.get('href', '')
+                    normalized_link = normalize_link(link, base_url, page_path)
+                    if normalized_link not in urls_to_process and normalized_link not in scraped_urls:
+                        urls_to_process.append(normalized_link)
+            else:
+                print(f'HTTP {response.status_code} for {url}')
         except Exception as e:
             print(f'Error processing {url}: {str(e)}')
             continue
@@ -248,15 +250,15 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
 
 async def process_websites_async(websites_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Process multiple websites concurrently using asyncio.
+    Process multiple websites concurrently using asyncio and httpx.
 
     :param websites_data: List of dictionaries containing website information
     :return: List of dictionaries with updated email information
     """
     results = []
     
-    # Create aiohttp session for concurrent requests
-    async with aiohttp.ClientSession() as session:
+    # Create httpx client for concurrent requests
+    async with httpx.AsyncClient() as client:
         tasks = []
         
         for website_data in websites_data:
@@ -280,7 +282,7 @@ async def process_websites_async(websites_data: List[Dict[str, Any]]) -> List[Di
                 continue
             
             # Create async task for scraping
-            task = asyncio.create_task(scrape_website_async(session, website))
+            task = asyncio.create_task(scrape_website_async(client, website))
             tasks.append((website_data, task))
         
         # Wait for all tasks to complete
@@ -432,5 +434,13 @@ def health_check():
 
 
 if __name__ == '__main__':
+    print("Starting Email Scraper API (Python 3.13 Compatible)...")
+    print("Available endpoints:")
+    print("- POST /scrape-emails - Scrape emails from multiple websites")
+    print("- GET /health - Health check")
+    print("\nExample usage:")
+    print('curl -X POST http://localhost:5000/scrape-emails \\')
+    print('  -H "Content-Type: application/json" \\')
+    print('  -d \'{"websites": [{"Name": "Test", "Website": "https://example.com", "Email": null, "Description": "Test site"}], "concurrent": true, "max_workers": 5}\'')
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='::', port=5000, debug=True)

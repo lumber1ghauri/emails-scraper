@@ -1,69 +1,213 @@
-# Email Scraper Tool 📧
+# Email Scraper API
 
-A Python-based tool that scrapes websites to collect email addresses. Given a starting URL, this tool will recursively follow links found on the page and extract email addresses from all visited pages.
+A Flask-based web service that scrapes emails from multiple websites concurrently.
 
-Built with:
-<br>
-<br>
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) 
-<br>
-<br>
+## Features
 
-## Features ✨
-- **Recursive scraping**: Follows links on the web pages to visit multiple pages for a thorough search.
-- **Email extraction**: Uses regular expressions to find and collect email addresses.
-- **Easy to use**: Just enter a URL, and the tool will start scraping.
+- **Concurrent Processing**: Process multiple websites simultaneously using ThreadPoolExecutor
+- **Async Support**: Alternative async processing using asyncio and aiohttp
+- **REST API**: Simple HTTP endpoints for easy integration
+- **Error Handling**: Robust error handling and timeout management
+- **Performance Metrics**: Returns processing time and statistics
 
-## Requirements 🛠️
-- `python 3.x`
-- `requests` – For making HTTP requests.
-- `beautifulsoup4` – For parsing and navigating HTML.
-- `lxml` – An XML/HTML parser for BeautifulSoup.
+## Installation
 
-## Installation Guide 📝
-
-### 1. Clone the repository:
-```bash
-git clone https://github.com/AdrianTomin/email-scraper.git
-cd email-scraper
-```
-
-### 2. Set up a virtual environment (optional but recommended):
-```bash
-python -m venv venv
-source venv/bin/activate  
-```
-> On Windows: venv\Scripts\activate
-
-### 3. Install dependencies:
-The required libraries are listed in requirements.txt. You can install them using pip:
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-If you don't have the requirements.txt file yet, you can generate it as follows:
-```bash
-pip freeze > requirements.txt
-```
 
-### 4. Run the tool:
-After installing the dependencies, you can run the tool by executing the following command:
-
+2. Run the server:
 ```bash
 python email_scraper.py
 ```
 
-## Example Output 🖥️
-```
-[+] Enter url to scan: https://example.com
-[1] Processing https://example.com
-[2] Processing https://example.com/contact
-Found emails:
-info@example.com
-support@example.com
+The API will be available at `http://localhost:5000`
+
+## API Endpoints
+
+### POST /scrape-emails
+
+Scrapes emails from multiple websites concurrently.
+
+**Request Body:**
+```json
+{
+  "websites": [
+    {
+      "Name": "IGE Overseas",
+      "Website": "https://igeoverseas.com/",
+      "Email": null,
+      "Description": "Top study abroad consultants in Lahore."
+    },
+    {
+      "Name": "Universities Page",
+      "Website": "https://universitiespage.com/",
+      "Email": null,
+      "Description": "Best study abroad education consultant in Lahore Pakistan."
+    }
+  ],
+  "concurrent": true,
+  "max_workers": 10
+}
 ```
 
-## Badges
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
+**Response:**
+```json
+{
+  "results": [
+    {
+      "Name": "IGE Overseas",
+      "Website": "https://igeoverseas.com/",
+      "Email": "info@igeoverseas.com",
+      "Description": "Top study abroad consultants in Lahore.",
+      "Status": "Found"
+    },
+    {
+      "Name": "Universities Page",
+      "Website": "https://universitiespage.com/",
+      "Email": null,
+      "Description": "Best study abroad education consultant in Lahore Pakistan.",
+      "Status": "Not found"
+    }
+  ],
+  "total_websites": 2,
+  "processing_time_seconds": 5.23,
+  "found_emails": 1,
+  "errors": 0
+}
+```
 
-## Authors
-- [@AdrianTomin](https://www.github.com/AdrianTomin)
+### GET /health
+
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "email-scraper"
+}
+```
+
+## Usage Examples
+
+### Using curl
+
+```bash
+curl -X POST http://localhost:5000/scrape-emails \
+  -H "Content-Type: application/json" \
+  -d '{
+    "websites": [
+      {
+        "Name": "Test Company",
+        "Website": "https://example.com",
+        "Email": null,
+        "Description": "Test description"
+      }
+    ],
+    "concurrent": true,
+    "max_workers": 5
+  }'
+```
+
+### Using Python requests
+
+```python
+import requests
+import json
+
+# Your website data
+websites_data = [
+    {
+        "Name": "IGE Overseas",
+        "Website": "https://igeoverseas.com/",
+        "Email": null,
+        "Description": "Top study abroad consultants in Lahore."
+    },
+    {
+        "Name": "Universities Page",
+        "Website": "https://universitiespage.com/",
+        "Email": null,
+        "Description": "Best study abroad education consultant in Lahore Pakistan."
+    }
+]
+
+# Make API request
+response = requests.post(
+    'http://localhost:5000/scrape-emails',
+    json={
+        'websites': websites_data,
+        'concurrent': True,
+        'max_workers': 10
+    }
+)
+
+# Process results
+if response.status_code == 200:
+    results = response.json()
+    print(f"Processed {results['total_websites']} websites in {results['processing_time_seconds']} seconds")
+    print(f"Found {results['found_emails']} emails")
+    
+    for result in results['results']:
+        if result['Email']:
+            print(f"✓ {result['Name']}: {result['Email']}")
+        else:
+            print(f"✗ {result['Name']}: No email found")
+else:
+    print(f"Error: {response.text}")
+```
+
+### Using n8n
+
+1. Add an **HTTP Request** node
+2. Set method to `POST`
+3. Set URL to `http://localhost:5000/scrape-emails`
+4. Set Headers: `Content-Type: application/json`
+5. Set Body to your JSON data with websites
+
+## Configuration Options
+
+- **concurrent**: Boolean, enables concurrent processing (default: true)
+- **max_workers**: Integer, maximum number of concurrent threads (default: 10)
+- **timeout**: Request timeout in seconds (default: 10)
+
+## Performance
+
+- **Concurrent Processing**: Uses ThreadPoolExecutor for parallel website processing
+- **Async Alternative**: Also supports asyncio for async processing
+- **Timeout Management**: Configurable timeouts to prevent hanging requests
+- **Error Recovery**: Continues processing even if some websites fail
+
+## Error Handling
+
+The API handles various error scenarios:
+- Network timeouts
+- Invalid URLs
+- HTTP errors
+- Parsing errors
+- Missing data
+
+All errors are logged and included in the response with appropriate status messages.
+
+## Security Considerations
+
+- The API runs on `0.0.0.0:5000` by default (accessible from any IP)
+- Consider using a reverse proxy (nginx) for production
+- Add authentication if needed
+- Rate limiting may be required for high-volume usage
+
+## Production Deployment
+
+For production use:
+
+1. Use a WSGI server like Gunicorn:
+```bash
+pip install gunicorn
+gunicorn -w 4 -b 0.0.0.0:5000 email_scraper:app
+```
+
+2. Add environment variables for configuration
+3. Use a reverse proxy (nginx)
+4. Add monitoring and logging
+5. Consider using Docker for containerization

@@ -1,3 +1,103 @@
+#!/bin/bash
+
+echo "🚀 Email Scraper Setup Script (Fixed for Python 3.13)"
+echo "====================================================="
+
+# Check if running as root
+if [[ $EUID -eq 0 ]]; then
+   echo "❌ Please don't run this script as root"
+   exit 1
+fi
+
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to create virtual environment with current Python
+create_venv() {
+    echo "🔧 Creating virtual environment..."
+    
+    # Remove existing venv if it exists
+    if [ -d "venv" ]; then
+        echo "🗑️  Removing existing virtual environment..."
+        rm -rf venv
+    fi
+    
+    # Create new virtual environment with current Python
+    python -m venv venv
+    
+    if [ ! -d "venv" ]; then
+        echo "❌ Failed to create virtual environment"
+        exit 1
+    fi
+    
+    echo "✅ Virtual environment created successfully"
+}
+
+# Function to install dependencies with compatible versions
+install_dependencies() {
+    echo "📦 Installing dependencies..."
+    
+    # Activate virtual environment
+    source venv/bin/activate
+    
+    # Upgrade pip
+    pip install --upgrade pip setuptools wheel
+    
+    # Install dependencies with compatible versions for Python 3.13
+    echo "Installing Flask..."
+    pip install flask
+    
+    echo "Installing requests..."
+    pip install requests
+    
+    echo "Installing beautifulsoup4..."
+    pip install beautifulsoup4
+    
+    echo "Installing html5lib (alternative to lxml)..."
+    pip install html5lib
+    
+    echo "Installing httpx (alternative to aiohttp)..."
+    pip install httpx
+    
+    echo "Installing asyncio..."
+    # asyncio is built into Python 3.13
+    
+    echo "✅ Dependencies installed successfully"
+}
+
+# Function to test the installation
+test_installation() {
+    echo "🧪 Testing installation..."
+    
+    # Activate virtual environment
+    source venv/bin/activate
+    
+    # Test Python import
+    python3 -c "
+import flask
+import requests
+import bs4
+import html5lib
+import httpx
+import asyncio
+print('✅ All imports successful!')
+"
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Installation test passed!"
+    else
+        echo "❌ Installation test failed!"
+        exit 1
+    fi
+}
+
+# Function to create a modified email scraper that works with Python 3.13
+create_compatible_scraper() {
+    echo "📝 Creating compatible email scraper..."
+    
+    cat > email_scraper_compatible.py << 'EOF'
 from collections import deque
 import urllib.parse
 import re
@@ -6,7 +106,7 @@ import requests
 import requests.exceptions as request_exception
 import json
 import asyncio
-import aiohttp
+import httpx
 from flask import Flask, request, jsonify
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -116,7 +216,8 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
             print(f'[+] Found {len(page_emails)} email(s) on {url}')
             return collected_emails
 
-        soup = BeautifulSoup(response.text, 'lxml')
+        # Use html5lib parser instead of lxml
+        soup = BeautifulSoup(response.text, 'html5lib')
 
         for anchor in soup.find_all('a'):
             link = anchor.get('href', '')
@@ -127,11 +228,11 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
     return collected_emails
 
 
-async def scrape_website_async(session: aiohttp.ClientSession, start_url: str, max_count: int = 100) -> set[str]:
+async def scrape_website_async(client: httpx.AsyncClient, start_url: str, max_count: int = 100) -> set[str]:
     """
-    Asynchronous version of website scraping.
+    Asynchronous version of website scraping using httpx.
 
-    :param session: aiohttp session for making requests
+    :param client: httpx client for making requests
     :param start_url: The initial URL to start scraping.
     :param max_count: The maximum number of pages to scrape. Defaults to 100.
     :return: A set of email addresses found during the scraping process.
@@ -158,28 +259,29 @@ async def scrape_website_async(session: aiohttp.ClientSession, start_url: str, m
         print(f'[{count}] Processing {url}')
 
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    html_content = await response.text()
-                    
-                    # Extract emails from current page
-                    page_emails = extract_emails(html_content)
-                    collected_emails.update(page_emails)
-                    
-                    # If we found any emails on this page, stop and return
-                    if page_emails:
-                        print(f'[+] Found {len(page_emails)} email(s) on {url}')
-                        return collected_emails
+            response = await client.get(url, timeout=10.0)
+            if response.status_code == 200:
+                html_content = response.text
+                
+                # Extract emails from current page
+                page_emails = extract_emails(html_content)
+                collected_emails.update(page_emails)
+                
+                # If we found any emails on this page, stop and return
+                if page_emails:
+                    print(f'[+] Found {len(page_emails)} email(s) on {url}')
+                    return collected_emails
 
-                    soup = BeautifulSoup(html_content, 'lxml')
+                # Use html5lib parser instead of lxml
+                soup = BeautifulSoup(html_content, 'html5lib')
 
-                    for anchor in soup.find_all('a'):
-                        link = anchor.get('href', '')
-                        normalized_link = normalize_link(link, base_url, page_path)
-                        if normalized_link not in urls_to_process and normalized_link not in scraped_urls:
-                            urls_to_process.append(normalized_link)
-                else:
-                    print(f'HTTP {response.status} for {url}')
+                for anchor in soup.find_all('a'):
+                    link = anchor.get('href', '')
+                    normalized_link = normalize_link(link, base_url, page_path)
+                    if normalized_link not in urls_to_process and normalized_link not in scraped_urls:
+                        urls_to_process.append(normalized_link)
+            else:
+                print(f'HTTP {response.status_code} for {url}')
         except Exception as e:
             print(f'Error processing {url}: {str(e)}')
             continue
@@ -248,15 +350,15 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
 
 async def process_websites_async(websites_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Process multiple websites concurrently using asyncio.
+    Process multiple websites concurrently using asyncio and httpx.
 
     :param websites_data: List of dictionaries containing website information
     :return: List of dictionaries with updated email information
     """
     results = []
     
-    # Create aiohttp session for concurrent requests
-    async with aiohttp.ClientSession() as session:
+    # Create httpx client for concurrent requests
+    async with httpx.AsyncClient() as client:
         tasks = []
         
         for website_data in websites_data:
@@ -280,7 +382,7 @@ async def process_websites_async(websites_data: List[Dict[str, Any]]) -> List[Di
                 continue
             
             # Create async task for scraping
-            task = asyncio.create_task(scrape_website_async(session, website))
+            task = asyncio.create_task(scrape_website_async(client, website))
             tasks.append((website_data, task))
         
         # Wait for all tasks to complete
@@ -432,5 +534,159 @@ def health_check():
 
 
 if __name__ == '__main__':
+    print("Starting Email Scraper API (Python 3.13 Compatible)...")
+    print("Available endpoints:")
+    print("- POST /scrape-emails - Scrape emails from multiple websites")
+    print("- GET /health - Health check")
+    print("\nExample usage:")
+    print('curl -X POST http://localhost:5000/scrape-emails \\')
+    print('  -H "Content-Type: application/json" \\')
+    print('  -d \'{"websites": [{"Name": "Test", "Website": "https://example.com", "Email": null, "Description": "Test site"}], "concurrent": true, "max_workers": 5}\'')
     
     app.run(host='0.0.0.0', port=5000, debug=True)
+EOF
+
+    echo "✅ Compatible email scraper created: email_scraper_compatible.py"
+}
+
+# Function to create a simple test script
+create_test_script() {
+    echo "📝 Creating test script..."
+    
+    cat > test_api.py << 'EOF'
+#!/usr/bin/env python3
+import requests
+import json
+
+def test_api():
+    """Test the email scraper API"""
+    
+    # Test data
+    test_data = {
+        "websites": [
+            {
+                "Name": "Test Company",
+                "Website": "https://httpbin.org/html",
+                "Email": None,
+                "Description": "Test website"
+            }
+        ],
+        "concurrent": True,
+        "max_workers": 1
+    }
+    
+    try:
+        # Make request to API
+        response = requests.post(
+            'http://localhost:5000/scrape-emails',
+            json=test_data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print("✅ API test successful!")
+            print(f"Response: {json.dumps(result, indent=2)}")
+        else:
+            print(f"❌ API test failed with status {response.status_code}")
+            print(f"Response: {response.text}")
+            
+    except requests.exceptions.ConnectionError:
+        print("❌ Could not connect to API. Make sure the server is running.")
+    except Exception as e:
+        print(f"❌ Test failed: {str(e)}")
+
+if __name__ == "__main__":
+    test_api()
+EOF
+
+    chmod +x test_api.py
+    echo "✅ Test script created: test_api.py"
+}
+
+# Function to create a run script
+create_run_script() {
+    echo "📝 Creating run script..."
+    
+    cat > run.sh << 'EOF'
+#!/bin/bash
+
+echo "🚀 Starting Email Scraper API (Python 3.13 Compatible)..."
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Run the compatible API
+python email_scraper_compatible.py
+EOF
+
+    chmod +x run.sh
+    echo "✅ Run script created: run.sh"
+}
+
+# Function to create a stop script
+create_stop_script() {
+    echo "📝 Creating stop script..."
+    
+    cat > stop.sh << 'EOF'
+#!/bin/bash
+
+echo "🛑 Stopping Email Scraper API..."
+
+# Find and kill the process
+pkill -f "python email_scraper_compatible.py"
+
+echo "✅ API stopped"
+EOF
+
+    chmod +x stop.sh
+    echo "✅ Stop script created: stop.sh"
+}
+
+# Main execution
+main() {
+    echo "🔍 Checking system requirements..."
+    
+    # Create virtual environment
+    create_venv
+    
+    # Install dependencies
+    install_dependencies
+    
+    # Test installation
+    test_installation
+    
+    # Create compatible scraper
+    create_compatible_scraper
+    
+    # Create helper scripts
+    create_test_script
+    create_run_script
+    create_stop_script
+    
+    echo ""
+    echo "🎉 Setup completed successfully!"
+    echo ""
+    echo "📋 Next steps:"
+    echo "1. Start the API: ./run.sh"
+    echo "2. Test the API: ./test_api.py"
+    echo "3. Stop the API: ./stop.sh"
+    echo ""
+    echo "🌐 API will be available at: http://localhost:5000"
+    echo "📖 API documentation:"
+    echo "   - POST /scrape-emails - Scrape emails from websites"
+    echo "   - GET /health - Health check"
+    echo ""
+    echo "💡 Example usage:"
+    echo 'curl -X POST http://localhost:5000/scrape-emails \'
+    echo '  -H "Content-Type: application/json" \'
+    echo '  -d '"'"'{"websites": [{"Name": "Test", "Website": "https://example.com", "Email": null, "Description": "Test"}], "concurrent": true, "max_workers": 5}'"'"''
+    echo ""
+    echo "🔧 Changes made for Python 3.13 compatibility:"
+    echo "   - Replaced lxml with html5lib parser"
+    echo "   - Replaced aiohttp with httpx"
+    echo "   - Used built-in asyncio"
+}
+
+# Run main function
+main 
