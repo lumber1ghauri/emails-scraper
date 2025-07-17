@@ -67,13 +67,13 @@ def normalize_link(link: str, base_url: str, page_path: str) -> str:
     return link
 
 
-def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
+def scrape_website(start_url: str, max_count: int = 5) -> set[str]:
     """
     Scrapes a website starting from the given URL, follows links, and collects email addresses.
     Stops after finding the first email.
 
     :param start_url: The initial URL to start scraping.
-    :param max_count: The maximum number of pages to scrape. Defaults to 100.
+    :param max_count: The maximum number of pages to scrape. Defaults to 5.
     :return: A set of email addresses found during the scraping process.
     """
 
@@ -82,9 +82,12 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
     collected_emails = set()
     count = 0
 
+    print(f"[START] Scraping: {start_url}")
+
     while urls_to_process:
         count += 1
         if count > max_count:
+            print(f"[LIMIT] Reached max_count ({max_count}) for {start_url}")
             break
 
         url = urls_to_process.popleft()
@@ -95,18 +98,24 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
         base_url = get_base_url(url)
         page_path = get_page_path(url)
 
+        print(f"  [PAGE {count}] {url}")
+
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=3)
             response.raise_for_status()
         except (request_exception.RequestException, request_exception.MissingSchema, request_exception.ConnectionError):
+            print(f"    [ERROR] Failed to fetch: {url}")
             continue
 
         # Extract emails from current page
         page_emails = extract_emails(response.text)
+        if page_emails:
+            print(f"    [EMAIL FOUND] {page_emails}")
         collected_emails.update(page_emails)
         
         # If we found any emails on this page, stop and return
         if page_emails:
+            print(f"[STOP] Found email(s) for {start_url}, stopping crawl.")
             return collected_emails
 
         # Use html5lib parser instead of lxml
@@ -114,18 +123,23 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
 
         for anchor in soup.find_all('a'):
             link = anchor.get('href', '')
+            # Skip non-HTML links (pdf, jpg, png, etc.)
+            if any(link.lower().endswith(ext) for ext in ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']):
+                continue
             normalized_link = normalize_link(link, base_url, page_path)
             if normalized_link not in urls_to_process and normalized_link not in scraped_urls:
                 urls_to_process.append(normalized_link)
 
+    print(f"[END] Done scraping: {start_url}")
     return collected_emails
 
 
-def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
+def process_single_website(website_data: Dict[str, Any], max_count: int = 5) -> Dict[str, Any]:
     """
     Process a single website and return results.
 
     :param website_data: Dictionary containing website information
+    :param max_count: Maximum number of pages to scrape per website
     :return: Dictionary with updated email information
     """
     name = website_data.get('Name', 'Unknown')
@@ -135,6 +149,7 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # If email already exists, skip scraping
     if existing_email:
+        print(f"[SKIP] {website} already has email: {existing_email}")
         return {
             'Name': name,
             'Website': website,
@@ -145,7 +160,7 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Scrape for emails
     try:
-        found_emails = scrape_website(website)
+        found_emails = scrape_website(website, max_count=max_count)
         if found_emails:
             # Take the first email found
             first_email = list(found_emails)[0]
@@ -165,6 +180,7 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
                 'Status': 'Not found'
             }
     except Exception as e:
+        print(f"[ERROR] Exception while scraping {website}: {e}")
         return {
             'Name': name,
             'Website': website,
@@ -174,12 +190,13 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers: int = 10) -> List[Dict[str, Any]]:
+def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers: int = 10, max_count: int = 5) -> List[Dict[str, Any]]:
     """
     Process multiple websites concurrently using ThreadPoolExecutor.
 
     :param websites_data: List of dictionaries containing website information
     :param max_workers: Maximum number of concurrent threads
+    :param max_count: Maximum number of pages to scrape per website
     :return: List of dictionaries with updated email information
     """
     results = []
@@ -187,7 +204,7 @@ def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
         future_to_website = {
-            executor.submit(process_single_website, website_data): website_data 
+            executor.submit(process_single_website, website_data, max_count): website_data 
             for website_data in websites_data
         }
         
@@ -201,7 +218,7 @@ def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers
                 name = website_data.get('Name', 'Unknown')
                 website = website_data.get('Website', '')
                 description = website_data.get('Description', '')
-                
+                print(f"[ERROR] Exception in thread for {website}: {e}")
                 results.append({
                     'Name': name,
                     'Website': website,
@@ -209,7 +226,6 @@ def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers
                     'Description': description,
                     'Status': f'Error: {str(e)}'
                 })
-    
     return results
 
 
@@ -242,6 +258,7 @@ def scrape_emails_endpoint():
         websites = data['websites']
         use_concurrent = data.get('concurrent', True)
         max_workers = data.get('max_workers', 10)
+        max_count = data.get('max_count', 5)  # Allow override from API input
         
         if not isinstance(websites, list):
             return jsonify({'error': 'Websites must be a list'}), 400
@@ -250,12 +267,12 @@ def scrape_emails_endpoint():
         
         if use_concurrent:
             # Use ThreadPoolExecutor for concurrent processing
-            results = process_websites_concurrent(websites, max_workers)
+            results = process_websites_concurrent(websites, max_workers, max_count)
         else:
             # Process websites sequentially
             results = []
             for website_data in websites:
-                result = process_single_website(website_data)
+                result = process_single_website(website_data, max_count)
                 results.append(result)
         
         end_time = time.time()
@@ -272,6 +289,7 @@ def scrape_emails_endpoint():
         return jsonify(response_data)
         
     except Exception as e:
+        print(f"[ERROR] Internal server error: {e}")
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
