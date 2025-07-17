@@ -1,16 +1,16 @@
 # Email Scraper API
 
-A Flask-based web service that scrapes emails from multiple websites concurrently.
+A Python Flask API for scraping email addresses from websites. Built for Python 3.13 compatibility.
 
 ## Features
 
-- **Concurrent Processing**: Process multiple websites simultaneously using ThreadPoolExecutor
-- **Async Support**: Alternative async processing using asyncio and aiohttp
-- **REST API**: Simple HTTP endpoints for easy integration
-- **Error Handling**: Robust error handling and timeout management
-- **Performance Metrics**: Returns processing time and statistics
+- **Email Extraction**: Scrapes websites and extracts email addresses
+- **Concurrent Processing**: Processes multiple websites simultaneously
+- **RESTful API**: Simple HTTP endpoints for integration
+- **Python 3.13 Compatible**: Works with the latest Python version
+- **Error Handling**: Robust error handling and logging
 
-## Installation
+## Quick Start
 
 1. Install dependencies:
 ```bash
@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 2. Run the server:
 ```bash
-python email_scraper.py
+python email_scraper_compatible.py
 ```
 
 The API will be available at `http://localhost:5000`
@@ -175,7 +175,7 @@ else:
 ## Performance
 
 - **Concurrent Processing**: Uses ThreadPoolExecutor for parallel website processing
-- **Async Alternative**: Also supports asyncio for async processing
+- **Sequential Processing**: Also supports sequential processing for simpler use cases
 - **Timeout Management**: Configurable timeouts to prevent hanging requests
 - **Error Recovery**: Continues processing even if some websites fail
 
@@ -204,10 +204,24 @@ For production use:
 1. Use a WSGI server like Gunicorn:
 ```bash
 pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5000 email_scraper:app
+gunicorn -w 4 -b 0.0.0.0:5000 email_scraper_compatible:app
 ```
 
 2. Add environment variables for configuration
 3. Use a reverse proxy (nginx)
 4. Add monitoring and logging
-5. Consider using Docker for containerization
+
+## Dependencies
+
+- **Flask 3.0.0**: Web framework
+- **Requests 2.31.0**: HTTP library
+- **BeautifulSoup4 4.12.2**: HTML parsing
+- **html5lib 1.1**: HTML5 parser
+- **httpx 0.25.0**: Modern HTTP client
+
+## Testing
+
+Run the test script to verify the API:
+```bash
+python test_api.py
+```

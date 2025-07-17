@@ -5,14 +5,11 @@ from bs4 import BeautifulSoup
 import requests
 import requests.exceptions as request_exception
 import json
-import asyncio
-import httpx
 from flask import Flask, request, jsonify
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from typing import List, Dict, Any
 import time
-
 
 app = Flask(__name__)
 
@@ -98,13 +95,10 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
         base_url = get_base_url(url)
         page_path = get_page_path(url)
 
-        print(f'[{count}] Processing {url}')
-
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
         except (request_exception.RequestException, request_exception.MissingSchema, request_exception.ConnectionError):
-            print('There was a request error')
             continue
 
         # Extract emails from current page
@@ -113,7 +107,6 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
         
         # If we found any emails on this page, stop and return
         if page_emails:
-            print(f'[+] Found {len(page_emails)} email(s) on {url}')
             return collected_emails
 
         # Use html5lib parser instead of lxml
@@ -124,67 +117,6 @@ def scrape_website(start_url: str, max_count: int = 100) -> set[str]:
             normalized_link = normalize_link(link, base_url, page_path)
             if normalized_link not in urls_to_process and normalized_link not in scraped_urls:
                 urls_to_process.append(normalized_link)
-
-    return collected_emails
-
-
-async def scrape_website_async(client: httpx.AsyncClient, start_url: str, max_count: int = 100) -> set[str]:
-    """
-    Asynchronous version of website scraping using httpx.
-
-    :param client: httpx client for making requests
-    :param start_url: The initial URL to start scraping.
-    :param max_count: The maximum number of pages to scrape. Defaults to 100.
-    :return: A set of email addresses found during the scraping process.
-    """
-
-    urls_to_process = deque([start_url])
-    scraped_urls = set()
-    collected_emails = set()
-    count = 0
-
-    while urls_to_process:
-        count += 1
-        if count > max_count:
-            break
-
-        url = urls_to_process.popleft()
-        if url in scraped_urls:
-            continue
-
-        scraped_urls.add(url)
-        base_url = get_base_url(url)
-        page_path = get_page_path(url)
-
-        print(f'[{count}] Processing {url}')
-
-        try:
-            response = await client.get(url, timeout=10.0)
-            if response.status_code == 200:
-                html_content = response.text
-                
-                # Extract emails from current page
-                page_emails = extract_emails(html_content)
-                collected_emails.update(page_emails)
-                
-                # If we found any emails on this page, stop and return
-                if page_emails:
-                    print(f'[+] Found {len(page_emails)} email(s) on {url}')
-                    return collected_emails
-
-                # Use html5lib parser instead of lxml
-                soup = BeautifulSoup(html_content, 'html5lib')
-
-                for anchor in soup.find_all('a'):
-                    link = anchor.get('href', '')
-                    normalized_link = normalize_link(link, base_url, page_path)
-                    if normalized_link not in urls_to_process and normalized_link not in scraped_urls:
-                        urls_to_process.append(normalized_link)
-            else:
-                print(f'HTTP {response.status_code} for {url}')
-        except Exception as e:
-            print(f'Error processing {url}: {str(e)}')
-            continue
 
     return collected_emails
 
@@ -201,11 +133,8 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
     existing_email = website_data.get('Email')
     description = website_data.get('Description', '')
     
-    print(f'Processing: {name} - {website}')
-    
     # If email already exists, skip scraping
     if existing_email:
-        print(f'[!] Email already exists: {existing_email}')
         return {
             'Name': name,
             'Website': website,
@@ -220,7 +149,6 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
         if found_emails:
             # Take the first email found
             first_email = list(found_emails)[0]
-            print(f'[+] Found email: {first_email}')
             return {
                 'Name': name,
                 'Website': website,
@@ -229,7 +157,6 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
                 'Status': 'Found'
             }
         else:
-            print(f'[-] No emails found')
             return {
                 'Name': name,
                 'Website': website,
@@ -238,7 +165,6 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
                 'Status': 'Not found'
             }
     except Exception as e:
-        print(f'[!] Error processing {website}: {str(e)}')
         return {
             'Name': name,
             'Website': website,
@@ -246,86 +172,6 @@ def process_single_website(website_data: Dict[str, Any]) -> Dict[str, Any]:
             'Description': description,
             'Status': f'Error: {str(e)}'
         }
-
-
-async def process_websites_async(websites_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Process multiple websites concurrently using asyncio and httpx.
-
-    :param websites_data: List of dictionaries containing website information
-    :return: List of dictionaries with updated email information
-    """
-    results = []
-    
-    # Create httpx client for concurrent requests
-    async with httpx.AsyncClient() as client:
-        tasks = []
-        
-        for website_data in websites_data:
-            name = website_data.get('Name', 'Unknown')
-            website = website_data.get('Website', '')
-            existing_email = website_data.get('Email')
-            description = website_data.get('Description', '')
-            
-            print(f'Adding task for: {name} - {website}')
-            
-            # If email already exists, skip scraping
-            if existing_email:
-                print(f'[!] Email already exists: {existing_email}')
-                results.append({
-                    'Name': name,
-                    'Website': website,
-                    'Email': existing_email,
-                    'Description': description,
-                    'Status': 'Already exists'
-                })
-                continue
-            
-            # Create async task for scraping
-            task = asyncio.create_task(scrape_website_async(client, website))
-            tasks.append((website_data, task))
-        
-        # Wait for all tasks to complete
-        for website_data, task in tasks:
-            try:
-                found_emails = await task
-                name = website_data.get('Name', 'Unknown')
-                website = website_data.get('Website', '')
-                description = website_data.get('Description', '')
-                
-                if found_emails:
-                    first_email = list(found_emails)[0]
-                    print(f'[+] Found email: {first_email} for {name}')
-                    results.append({
-                        'Name': name,
-                        'Website': website,
-                        'Email': first_email,
-                        'Description': description,
-                        'Status': 'Found'
-                    })
-                else:
-                    print(f'[-] No emails found for {name}')
-                    results.append({
-                        'Name': name,
-                        'Website': website,
-                        'Email': None,
-                        'Description': description,
-                        'Status': 'Not found'
-                    })
-            except Exception as e:
-                name = website_data.get('Name', 'Unknown')
-                website = website_data.get('Website', '')
-                description = website_data.get('Description', '')
-                print(f'[!] Error processing {website}: {str(e)}')
-                results.append({
-                    'Name': name,
-                    'Website': website,
-                    'Email': None,
-                    'Description': description,
-                    'Status': f'Error: {str(e)}'
-                })
-    
-    return results
 
 
 def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers: int = 10) -> List[Dict[str, Any]]:
@@ -356,7 +202,6 @@ def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers
                 website = website_data.get('Website', '')
                 description = website_data.get('Description', '')
                 
-                print(f'[!] Error processing {website}: {str(e)}')
                 results.append({
                     'Name': name,
                     'Website': website,
@@ -370,6 +215,7 @@ def process_websites_concurrent(websites_data: List[Dict[str, Any]], max_workers
 
 @app.route('/scrape-emails', methods=['POST'])
 def scrape_emails_endpoint():
+    print("request received from website")
     """
     API endpoint to scrape emails from multiple websites.
     
@@ -400,15 +246,17 @@ def scrape_emails_endpoint():
         if not isinstance(websites, list):
             return jsonify({'error': 'Websites must be a list'}), 400
         
-        print(f'Processing {len(websites)} websites...')
         start_time = time.time()
         
         if use_concurrent:
             # Use ThreadPoolExecutor for concurrent processing
             results = process_websites_concurrent(websites, max_workers)
         else:
-            # Use asyncio for async processing (alternative)
-            results = asyncio.run(process_websites_async(websites))
+            # Process websites sequentially
+            results = []
+            for website_data in websites:
+                result = process_single_website(website_data)
+                results.append(result)
         
         end_time = time.time()
         processing_time = end_time - start_time
@@ -434,13 +282,10 @@ def health_check():
 
 
 if __name__ == '__main__':
-    print("Starting Email Scraper API (Python 3.13 Compatible)...")
-    print("Available endpoints:")
-    print("- POST /scrape-emails - Scrape emails from multiple websites")
-    print("- GET /health - Health check")
-    print("\nExample usage:")
-    print('curl -X POST http://localhost:5000/scrape-emails \\')
-    print('  -H "Content-Type: application/json" \\')
-    print('  -d \'{"websites": [{"Name": "Test", "Website": "https://example.com", "Email": null, "Description": "Test site"}], "concurrent": true, "max_workers": 5}\'')
-    
-    app.run(host='::', port=5000, debug=True)
+    try:
+        from waitress import serve
+        print("Starting with Waitress WSGI server on http://0.0.0.0:5000 ...")
+        serve(app, host='0.0.0.0', port=5000)
+    except ImportError:
+        print("Waitress is not installed. Please install it with 'pip install waitress'. Running with Flask development server (not recommended for production).")
+        app.run(host='0.0.0.0', port=5000, debug=True)
