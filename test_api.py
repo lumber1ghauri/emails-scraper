@@ -8,15 +8,19 @@ def test_api():
     # Test data
     test_data = {
         "websites": [
-            {
-                "Name": "Test Company",
-                "Website": "https://httpbin.org/html",
-                "Email": None,
-                "Description": "Test website"
-            }
+            {"Name": "IGE Overseas", "Website": "https://igeoverseas.com/", "Email": None, "Description": "Top study abroad consultants in Lahore."},
+            {"Name": "Universities Page", "Website": "https://universitiespage.com/", "Email": None, "Description": "Education consultant in Lahore."},
+            {"Name": "Pakistan Embassy Sweden", "Website": "https://www.pakistanembassy.se/", "Email": None, "Description": "Embassy of Pakistan in Sweden."},
+            {"Name": "HEC Pakistan", "Website": "https://www.hec.gov.pk/", "Email": None, "Description": "Higher Education Commission of Pakistan."},
+            {"Name": "LUMS", "Website": "https://www.lums.edu.pk/", "Email": None, "Description": "Lahore University of Management Sciences."},
+            {"Name": "NUST", "Website": "https://www.nust.edu.pk/", "Email": None, "Description": "National University of Sciences and Technology."},
+            {"Name": "Pakistan In The World", "Website": "https://www.pakistanintheworld.pk/", "Email": None, "Description": "News and analysis from Pakistan."},
+            {"Name": "Pakistan Government", "Website": "https://www.pakistan.gov.pk/", "Email": None, "Description": "Official portal of the Government of Pakistan."},
+            {"Name": "Pakistan Embassy", "Website": "https://www.pakistan-embassy.com/", "Email": None, "Description": "Pakistan Embassy information."},
+            {"Name": "Pakistan Consulate NY", "Website": "https://www.pakistanconsulateny.org/", "Email": None, "Description": "Consulate General of Pakistan, New York."}
         ],
         "concurrent": True,
-        "max_workers": 1
+        "max_workers": 5
     }
     
     try:
